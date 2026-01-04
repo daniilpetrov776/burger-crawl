@@ -103,3 +103,16 @@ export interface IGrouper {
   getGroupKey(dish: Dish, context: ParseContext): string;
 }
 
+/**
+ * Интерфейс для setup операций - выполняет действия перед парсингом
+ */
+export interface ISetup {
+  /**
+   * Выполняет setup операции на странице
+   * @param page - страница Puppeteer
+   * @param restaurantIndex - индекс ресторана для выбора (0 = первый, 1 = второй и т.д.)
+   * @returns информация о выбранном ресторане
+   */
+  execute(page: any, restaurantIndex?: number): Promise<{ address?: string; restaurantId?: string }>;
+}
+

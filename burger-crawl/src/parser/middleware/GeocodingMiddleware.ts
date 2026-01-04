@@ -14,6 +14,14 @@ export class GeocodingMiddleware implements IMiddleware {
   async process(result: ParseResult): Promise<ParseResult> {
     const address = result.context.restaurantInfo?.address;
     
+    // Добавляем адрес к каждому блюду (даже если геокодинг не будет выполнен)
+    if (address && address !== 'Не указан') {
+      result.dishes = result.dishes.map(dish => ({
+        ...dish,
+        address: dish.address || address
+      }));
+    }
+    
     if (!address || address === 'Не указан') {
       console.log('Адрес не указан, пропускаю геокодинг');
       return result;

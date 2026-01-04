@@ -13,7 +13,8 @@ import type {
   IMiddleware,
   IExporter,
   IAddressSelector,
-  IPageParser
+  IPageParser,
+  ISetup
 } from './interfaces.js';
 
 export class BaseParser {
@@ -22,6 +23,8 @@ export class BaseParser {
   private exporter?: IExporter;
   private addressSelector?: IAddressSelector;
   private pageParser: IPageParser;
+  private setup?: ISetup;
+  private restaurantIndex: number = 0; // Индекс текущего ресторана
 
   constructor(
     config: ParserConfig,
@@ -30,6 +33,8 @@ export class BaseParser {
       middlewares?: IMiddleware[];
       exporter?: IExporter;
       addressSelector?: IAddressSelector;
+      setup?: ISetup;
+      restaurantIndex?: number; // Начальный индекс ресторана
     }
   ) {
     this.config = {
@@ -45,6 +50,8 @@ export class BaseParser {
     this.middlewares = options?.middlewares || [];
     this.exporter = options?.exporter;
     this.addressSelector = options?.addressSelector;
+    this.setup = options?.setup;
+    this.restaurantIndex = options?.restaurantIndex || 0;
     
     // Сортируем middleware по порядку
     this.middlewares.sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -70,6 +77,27 @@ export class BaseParser {
    */
   setAddressSelector(selector: IAddressSelector): void {
     this.addressSelector = selector;
+  }
+
+  /**
+   * Устанавливает setup операции
+   */
+  setSetup(setup: ISetup): void {
+    this.setup = setup;
+  }
+
+  /**
+   * Устанавливает индекс ресторана для следующего парсинга
+   */
+  setRestaurantIndex(index: number): void {
+    this.restaurantIndex = index;
+  }
+
+  /**
+   * Получает текущий индекс ресторана
+   */
+  getRestaurantIndex(): number {
+    return this.restaurantIndex;
   }
 
 
@@ -102,8 +130,26 @@ export class BaseParser {
         restaurantInfo: {}
       };
       
-      // Выбираем адрес, если есть селектор
-      if (this.addressSelector && targetAddress) {
+      // Выполняем setup операции, если они заданы
+      if (this.setup) {
+        console.log(`Выполняю setup операции с индексом ресторана: ${this.restaurantIndex}`);
+        const setupResult = await this.setup.execute(page, this.restaurantIndex);
+        
+        if (!context.restaurantInfo) {
+          context.restaurantInfo = {};
+        }
+        
+        if (setupResult.address) {
+          context.restaurantInfo.address = setupResult.address;
+        }
+        if (setupResult.restaurantId) {
+          context.restaurantInfo.restaurantId = setupResult.restaurantId;
+        }
+        
+        // Увеличиваем индекс для следующего запуска
+        this.restaurantIndex++;
+      } else if (this.addressSelector && targetAddress) {
+        // Старый способ выбора адреса (если setup не используется)
         console.log(`Выбираю адрес: ${targetAddress}`);
         const selectedAddress = await this.addressSelector.selectAddress(page, targetAddress);
         if (selectedAddress) {
@@ -190,6 +236,40 @@ export class BaseParser {
       }
     }
     
+    return results;
+  }
+
+  /**
+   * Парсит несколько ресторанов используя setup (автоматически увеличивает индекс)
+   */
+  async parseMultipleRestaurants(count: number): Promise<ParseResult[]> {
+    if (!this.setup) {
+      throw new Error('Setup не установлен. Используйте setSetup() перед вызовом этого метода.');
+    }
+
+    const results: ParseResult[] = [];
+    const initialIndex = this.restaurantIndex;
+
+    for (let i = 0; i < count; i++) {
+      this.restaurantIndex = initialIndex + i;
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`Парсинг ресторана ${i + 1}/${count} (индекс: ${this.restaurantIndex})`);
+      console.log('='.repeat(80));
+
+      try {
+        const result = await this.parse();
+        results.push(result);
+
+        // Задержка между запросами
+        if (i < count - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error(`Ошибка для ресторана с индексом ${this.restaurantIndex}:`, error instanceof Error ? error.message : String(error));
+        // Продолжаем со следующим рестораном
+      }
+    }
+
     return results;
   }
 
